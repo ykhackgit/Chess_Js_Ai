@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess AI</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-bg: #252526;
+            --board-border: #333;
+            --light-square: #ebecd0;
+            --dark-square: #739552;
+            --highlight: rgba(0, 0, 0, 0.15);
+            /* Ring/Dot color base */
+            --text-color: #d4d4d4;
+            --accent: #007acc;
+            --danger: #f44336;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: auto 300px;
+            gap: 20px;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .board-container {
+            position: relative;
+            padding: 10px;
+            background: var(--board-border);
+            border-radius: 4px;
+        }
+
+        .mainboard {
+            width: 600px;
+            height: 600px;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            position: relative;
+        }
+
+        .box {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            box-sizing: border-box;
+            /* Ensure padding/border included */
+        }
+
+        .light {
+            background: var(--light-square);
+        }
+
+        .dark {
+            background: var(--dark-square);
+        }
+
+        .piece {
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            transition: transform 0.2s ease-out;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Highlight Styles */
+        .box.highlight::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.2);
+            width: 30%;
+            height: 30%;
+            pointer-events: none;
+        }
+
+        /* For capture (if box has a piece, style it differently) */
+        .box.highlight.capture::after {
+            background: transparent;
+            border: 5px solid rgba(0, 0, 0, 0.2);
+            width: 85%;
+            height: 85%;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-width: 250px;
+        }
+
+        .panel {
+            background: #333;
+            padding: 15px;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .player-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+
+        .timer {
+            font-family: monospace;
+            font-size: 1.5em;
+            color: #fff;
+        }
+
+        .captured-pieces {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            min-height: 30px;
+        }
+
+        .captured-piece {
+            width: 25px;
+            height: 25px;
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+
+        .controls {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        select,
+        button {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #3c3c3c;
+            color: white;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #444;
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        button.primary:hover {
+            background: #0062a3;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .modal.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .modal-content {
+            background: var(--panel-bg);
+            padding: 40px;
+            border-radius: 12px;
+            text-align: center;
+            transform: scale(0.8);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            max-width: 90%;
+        }
+
+        .modal.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal h1 {
+            margin: 0 0 20px 0;
+            font-size: 2.5em;
+        }
+
+        .win {
+            color: #4caf50;
+        }
+
+        .lose {
+            color: var(--danger);
+        }
+
+        .draw {
+            color: #ff9800;
+        }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-5px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(5px);
+            }
+        }
+
+        .shaking {
+            animation: shake 0.4s cubic-bezier(.36, .07, .19, .97) both;
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #fff;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            animation: rotation 1s linear infinite;
+            margin-left: 10px;
+            display: none;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .thinking .loader {
+            display: inline-block;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 950px) {
+            body {
+                height: auto;
+                padding: 20px 0;
+                overflow-y: auto;
+            }
+
+            .app {
+                grid-template-columns: 1fr;
+                width: 95%;
+                max-width: 600px;
+                gap: 10px;
+            }
+
+            .board-container {
+                padding: 5px;
+            }
+
+            .mainboard {
+                width: 100%;
+                height: auto;
+                aspect-ratio: 1/1;
+            }
+
+            .sidebar {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .panel {
+                flex: 1;
+                min-width: 150px;
+            }
+
+            .controls {
+                width: 100%;
+                margin: 0;
+            }
+        }
+
+        .wK {
+            background-image: url('pieces/nrking-w.svg');
+        }
+
+        .wQ {
+            background-image: url('pieces/queen-w.svg');
+        }
+
+        .wR {
+            background-image: url('pieces/rook-w.svg');
+        }
+
+        .wB {
+            background-image: url('pieces/bishop-w.svg');
+        }
+
+        .wN {
+            background-image: url('pieces/Knight-w.svg');
+        }
+
+        .wP {
+            background-image: url('pieces/pawn-w.svg');
+        }
+
+        .bK {
+            background-image: url('pieces/nrking-b.svg');
+        }
+
+        .bQ {
+            background-image: url('pieces/queen-b.svg');
+        }
+
+        .bR {
+            background-image: url('pieces/rook-b.svg');
+        }
+
+        .bB {
+            background-image: url('pieces/bishop-b.svg');
+        }
+
+        .bN {
+            background-image: url('pieces/Knight-b.svg');
+        }
+
+        .bP {
+            background-image: url('pieces/pawn-b.svg');
+        }
+
+        .promotion-options {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .promotion-options button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: #4CAF50;
+            color: white;
+            font-weight: bold;
+            border-radius: 5px;
+        }
+
+        .promotion-options button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app">
+        <div class="board-container" id="boardContainer">
+            <div class="mainboard" id="mainboard"></div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <div class="player-info">
+                    <span>Opponent</span>
+                    <div class="timer" id="timer-black">05:00</div>
+                </div>
+                <div class="captured-pieces" id="captured-black"></div>
+            </div>
+
+            <div class="panel">
+                <div class="player-info">
+                    <span>You</span>
+                    <div class="timer" id="timer-white">05:00</div>
+                </div>
+                <div class="captured-pieces" id="captured-white"></div>
+            </div>
+
+            <div class="controls">
+                <label>Mode</label>
+                <select id="playAs">
+                    <option value="white">Play as White</option>
+                    <option value="black">Play as Black</option>
+                </select>
+                <label>Time</label>
+                <select id="timeControl">
+                    <option value="5">5 Minutes</option>
+                    <option value="10">10 Minutes</option>
+                    <option value="15">15 Minutes</option>
+                </select>
+                <label>Difficulty</label>
+                <select id="difficulty">
+                    <option value="1">Level 1 (Depth 1)</option>
+                    <option value="2">Level 2 (Depth 2)</option>
+                    <option value="3" selected>Level 3 (Depth 3)</option>
+                    <option value="4">Level 4 (Depth 4)</option>
+                    <option value="5">Level 5 (Depth 5)</option>
+                </select>
+                <button class="primary" onclick="initGame()" id="startBtn">New Game</button>
+                <div id="status" style="text-align: center; color: #888; font-size: 0.9em; height: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="gameModal">
+        <div class="modal-content">
+            <h1 id="modalTitle">Game Over</h1>
+            <p id="modalMessage"></p>
+            <button class="primary" onclick="closeModal()">Play Again</button>
+        </div>
+    </div>
+
+    <div class="modal" id="promotionModal" style="display: none;">
+        <div class="modal-content">
+            <h3>Choose Promotion</h3>
+            <div class="promotion-options">
+                <button onclick="commitPromotion('Q')">Queen</button>
+                <button onclick="commitPromotion('R')">Rook</button>
+                <button onclick="commitPromotion('B')">Bishop</button>
+                <button onclick="commitPromotion('N')">Knight</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="chess.js"></script>
+    <script src="chessai_palyrandom.js"></script>
+    <script>
+        // Initialize Logic (Main Thread)
+        // We can evaluate the chess.js and chessai codes in global scope for the main thread to use
+
+
+        let gameState;
+        let aiWorker;
+        let timerInterval;
+        let isGameActive = false;
+        let selectedSquare = -1;
+        let playerColor = 'white';
+
+        const boardEl = document.getElementById('mainboard');
+        const timerW = document.getElementById('timer-white');
+        const timerB = document.getElementById('timer-black');
+        const statusEl = document.getElementById('status');
+        const modal = document.getElementById('gameModal');
+
+        let useWorker = true;
+        let lastTime;
+
+        function initGame() {
+            if (timerInterval) clearInterval(timerInterval);
+            playerColor = document.getElementById('playAs').value;
+            const time = parseInt(document.getElementById('timeControl').value);
+
+            gameState = new GameState(playerColor, time);
+            isGameActive = true;
+            selectedSquare = -1;
+
+            timerW.innerText = `${String(time).padStart(2, '0')}:00`;
+            timerB.innerText = `${String(time).padStart(2, '0')}:00`;
+            timerW.dataset.time = time * 60;
+            timerB.dataset.time = time * 60;
+
+            document.getElementById('captured-white').innerHTML = '';
+            document.getElementById('captured-black').innerHTML = '';
+
+            drawBoard();
+            lastTime = Date.now(); // Initialize global lastTime
+            startTimer();
+
+            if (aiWorker) aiWorker.terminate();
+
+            // Try to initialize Worker
+            useWorker = true;
+            try {
+                aiWorker = new Worker('ai_worker.js');
+                aiWorker.onmessage = handleWorkerMessage;
+                aiWorker.onerror = function (e) {
+                    console.warn("Worker failed (likely file:// restriction). Falling back to main thread.", e);
+                    useWorker = false;
+                    aiWorker.terminate();
+                    aiWorker = null;
+                    alert("Running in Offline Mode (Direct File). AI will work, but the interface may freeze briefly while thinking.");
+                    // Retrigger AI move if it was supposed to be waiting
+                    if (playerColor === 'black' && isGameActive && gameState.currentTurn === 'black') {
+                        triggerAiMove();
+                    }
+                };
+            } catch (error) {
+                console.warn("Worker creation failed. Falling back to main thread.", error);
+                useWorker = false;
+                alert("Running in Offline Mode (Direct File). AI will work, but the interface may freeze briefly while thinking.");
+            }
+
+            if (playerColor === 'black' && isGameActive) {
+                triggerAiMove();
+            }
+        }
+
+        // ... drawBoard and handleSquareClick remain the same ...
+
+        function triggerAiMove() {
+            if (!isGameActive) return;
+
+            const level = parseInt(document.getElementById('difficulty').value);
+            statusEl.innerHTML = 'AI Thinking... <span class="loader"></span>';
+            statusEl.classList.add('thinking');
+
+            if (useWorker && aiWorker) {
+                // Async Worker Mode
+                aiWorker.postMessage({
+                    message: 'search',
+                    level: level,
+                    gameState: {
+                        bitboards: gameState.bitboards,
+                        currentTurn: gameState.currentTurn,
+                        Player: gameState.Player,
+                        whitecanCastle: gameState.whitecanCastle,
+                        blackcanCastle: gameState.blackcanCastle,
+                        castlingRights: gameState.castlingRights,
+                        enPassantSquare: gameState.enPassantSquare,
+                        board: gameState.board
+                    }
+                });
+            } else {
+                // Synchronous Fallback Mode (Main Thread)
+                // Use setTimeout to allow the browser to render the "Thinking..." text before freezing
+                setTimeout(() => {
+                    const startThink = Date.now();
+                    const move = calculateBestMove(gameState, level);
+                    const endThink = Date.now();
+
+                    // Manually deduct time for the AI (who was thinking)
+                    const elapsedSeconds = Math.floor((endThink - startThink) / 1000);
+                    if (elapsedSeconds > 0) {
+                        const el = gameState.currentTurn === 'white' ? timerW : timerB;
+                        let t = parseInt(el.dataset.time) - elapsedSeconds;
+                        if (t < 0) t = 0;
+                        el.dataset.time = t;
+                        const m = Math.floor(t / 60);
+                        const s = t % 60;
+                        el.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+                        if (t <= 0) {
+                            endGame(gameState.currentTurn === 'white' ? 'Black Wins (Timeout)' : 'White Wins (Timeout)');
+                            return;
+                        }
+                    }
+
+                    // Reset the global timer tracker so it doesn't double-count this duration
+                    lastTime = Date.now();
+
+                    handleAiMoveResult(move);
+                }, 50);
+            }
+        }
+
+        function handleWorkerMessage(e) {
+            const { type, move } = e.data;
+            if (type === 'move') {
+                handleAiMoveResult(move);
+            }
+        }
+
+        function handleAiMoveResult(move) {
+            statusEl.innerHTML = '';
+            statusEl.classList.remove('thinking');
+
+            if (move) {
+                executeMove(move.from, move.to);
+                drawBoard();
+
+                const isCheck = gameState.CheckDetectionOnKing();
+                if (isCheck) {
+                    document.getElementById('boardContainer').classList.add('shaking');
+                    setTimeout(() => document.getElementById('boardContainer').classList.remove('shaking'), 500);
+                }
+
+                checkGameStatus();
+            }
+        }
+
+        function highlightMoves(from) {
+            drawBoard();
+            const moves = gameState.getPossibleMoves(from);
+            document.getElementById(`sq-${from}`).classList.add('highlight');
+            moves.forEach(m => {
+                const sqEl = document.getElementById(`sq-${m}`);
+                sqEl.classList.add('highlight');
+                if (sqEl.querySelector('.piece')) {
+                    sqEl.classList.add('capture');
+                }
+            });
+        }
+
+        function updateCaptured(piece) {
+            const container = piece.startsWith('w') ? document.getElementById('captured-black') : document.getElementById('captured-white');
+            const p = document.createElement('div');
+            p.className = `captured-piece ${piece}`;
+            container.appendChild(p);
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                if (!isGameActive) return;
+
+                const now = Date.now();
+                const elapsed = now - lastTime;
+
+                if (elapsed >= 1000) {
+                    const el = gameState.currentTurn === 'white' ? timerW : timerB;
+                    let timeRemaining = parseInt(el.dataset.time);
+
+                    const secondsPassed = Math.floor(elapsed / 1000);
+
+                    if (secondsPassed > 0) {
+                        timeRemaining -= secondsPassed;
+                        lastTime += secondsPassed * 1000;
+                    }
+
+                    if (timeRemaining <= 0) {
+                        timeRemaining = 0;
+                        endGame(gameState.currentTurn === 'white' ? 'Black Wins (Timeout)' : 'White Wins (Timeout)');
+                        el.dataset.time = 0;
+                        el.innerText = "00:00";
+                        return;
+                    }
+
+                    el.dataset.time = timeRemaining;
+                    const m = Math.floor(timeRemaining / 60);
+                    const s = timeRemaining % 60;
+                    el.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                }
+            }, 200);
+        }
+
+        function checkGameStatus() {
+            const status = gameState.DrawOrCheckMateDetection();
+            if (status === 'Checkmate') {
+                endGame(gameState.currentTurn === 'white' ? 'Black Wins' : 'White Wins');
+            } else if (status === 'Stalemate') {
+                endGame('Draw (Stalemate)');
+            }
+        }
+
+        function endGame(msg) {
+            isGameActive = false;
+            clearInterval(timerInterval);
+            document.getElementById('modalTitle').innerText = msg.includes('Win') ? 'Victory!' : 'Draw';
+            document.getElementById('modalMessage').innerText = msg;
+            modal.classList.add('active');
+            if (msg.includes('Win')) {
+                document.getElementById('modalTitle').className = 'win';
+            } else {
+                document.getElementById('modalTitle').className = 'draw';
+            }
+        }
+
+        function closeModal() {
+            modal.classList.remove('active');
+            initGame();
+        }
+
+        function drawBoard() {
+            boardEl.innerHTML = '';
+            const isFlipped = playerColor === 'black';
+
+            for (let i = 0; i < 64; i++) {
+                let r = Math.floor(i / 8);
+                let c = i % 8;
+                let displayIdx = isFlipped ? 63 - i : i;
+                let displayR = Math.floor(displayIdx / 8);
+                let displayC = displayIdx % 8;
+
+                const sq = document.createElement('div');
+                sq.className = `box ${(displayR + displayC) % 2 === 0 ? 'light' : 'dark'}`;
+                sq.id = `sq-${displayIdx}`;
+                sq.onclick = () => handleSquareClick(displayIdx);
+
+                const pieceCode = gameState.board[Math.floor(displayIdx / 8)][displayIdx % 8];
+                if (pieceCode) {
+                    const piece = document.createElement('div');
+                    piece.className = `piece ${pieceCode}`;
+                    sq.appendChild(piece);
+                }
+                boardEl.appendChild(sq);
+            }
+        }
+
+        function handleSquareClick(idx) {
+            if (!isGameActive || gameState.currentTurn !== playerColor) return;
+
+            if (selectedSquare === -1) {
+                const piece = gameState.board[Math.floor(idx / 8)][idx % 8];
+                if (piece && piece.startsWith(playerColor === 'white' ? 'w' : 'b')) {
+                    selectedSquare = idx;
+                    highlightMoves(idx);
+                }
+            } else {
+                const moves = gameState.getPossibleMoves(selectedSquare);
+                if (moves.includes(idx)) {
+                    // Check for Promotion
+                    const piece = gameState.board[Math.floor(selectedSquare / 8)][selectedSquare % 8];
+                    const isPawn = piece && piece[1] === 'P';
+                    // White promotes at Row 0 (idx < 8), Black at Row 7 (idx >= 56)
+                    // Note: playerColor check ensures we only trigger this for the human's moves
+                    if (isPawn && ((playerColor === 'white' && idx < 8) || (playerColor === 'black' && idx >= 56))) {
+                        showPromotionModal(selectedSquare, idx);
+                        return;
+                    }
+
+                    executeMove(selectedSquare, idx);
+                    selectedSquare = -1;
+                    drawBoard();
+                    checkGameStatus();
+                    if (isGameActive) triggerAiMove();
+                } else {
+                    const piece = gameState.board[Math.floor(idx / 8)][idx % 8];
+                    if (piece && piece.startsWith(playerColor === 'white' ? 'w' : 'b')) {
+                        selectedSquare = idx;
+                        highlightMoves(idx);
+                    } else {
+                        selectedSquare = -1;
+                        drawBoard();
+                    }
+                }
+            }
+        }
+
+        function executeMove(from, to, options) {
+            const [valid, captured] = gameState.MovePiece(from, to, options);
+            if (captured) updateCaptured(captured);
+        }
+
+        let pendingPromotionMove = null;
+
+        function showPromotionModal(from, to) {
+            pendingPromotionMove = { from, to };
+            document.getElementById('promotionModal').style.display = 'flex';
+        }
+
+        function commitPromotion(pieceType) {
+            document.getElementById('promotionModal').style.display = 'none';
+            if (pendingPromotionMove) {
+                executeMove(pendingPromotionMove.from, pendingPromotionMove.to, { promotion: pieceType });
+
+                selectedSquare = -1;
+                drawBoard();
+                checkGameStatus();
+                if (isGameActive) triggerAiMove();
+
+                pendingPromotionMove = null;
+            }
+        }
+
+        window.onload = initGame;
+    </script>
+</body>
+
+</html>
